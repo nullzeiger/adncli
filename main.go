@@ -98,7 +98,7 @@ func fetchRSSFeed(ctx context.Context, url string) (*RSS, error) {
 
 // printMenu displays the available RSS categories
 func printMenu() {
-	fmt.Println("AGI RSS Reader")
+	fmt.Println("Adnkronos RSS Reader")
 	fmt.Println("0: Exit")
 	fmt.Println("1: Prima Pagina")
 	fmt.Println("2: Ultim'ora")
