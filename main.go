@@ -139,6 +139,7 @@ func main() {
 
 	// Print feed information
 	fmt.Printf("\nTitle: %s\n", rss.Channel.Title)
+	fmt.Printf("Link: %s\n", rss.Channel.Link)
 	fmt.Printf("Description: %s\n\n", rss.Channel.Description)
 
 	// Print each item
