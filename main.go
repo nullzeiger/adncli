@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Package main provides a simple command-line RSS reader for
+// Adnkronos RSS feeds. It allows users to select a news category,
+// fetch the corresponding RSS feed, and display parsed content.
 package main
 
 import (
@@ -16,10 +19,13 @@ import (
 	"time"
 )
 
+// Rss represents the root <rss> element of an RSS document.
 type Rss struct {
 	Channel Channel `xml:"channel"`
 }
 
+// Channel represents the <channel> section of an RSS feed,
+// containing metadata and a collection of RSS items.
 type Channel struct {
 	Title       string `xml:"title"`
 	Description string `xml:"description"`
@@ -27,6 +33,8 @@ type Channel struct {
 	Items       []Item `xml:"item"`
 }
 
+// Item represents a single <item> entry in an RSS feed, containing
+// information about an individual news article.
 type Item struct {
 	Title       string `xml:"title"`
 	Link        string `xml:"link"`
@@ -34,12 +42,17 @@ type Item struct {
 	PubDate     string `xml:"pubDate"`
 }
 
+// RssReader provides the functionality to load RSS feeds,
+// remove HTML tags from descriptions, and display the parsed results.
 type RssReader struct {
-	categoryURLs map[int]string
-	htmlTagRegex *regexp.Regexp
-	client       *http.Client
+	categoryURLs map[int]string // Mapping of category numbers to RSS URLs
+	htmlTagRegex *regexp.Regexp // Precompiled regex for HTML tag removal
+	client       *http.Client   // HTTP client used to fetch RSS feeds
 }
 
+// NewRssReader initializes and returns a configured RssReader.
+// It prepares the RSS category URL map, compiles required regular
+// expressions, and sets up an HTTP client.
 func NewRssReader() (*RssReader, error) {
 	categoryURLs := map[int]string{
 		1: "https://www.adnkronos.com/RSS_PrimaPagina.xml",
@@ -57,9 +70,7 @@ func NewRssReader() (*RssReader, error) {
 		return nil, err
 	}
 
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-	}
+	client := &http.Client{Timeout: 15 * time.Second}
 
 	return &RssReader{
 		categoryURLs: categoryURLs,
@@ -68,12 +79,17 @@ func NewRssReader() (*RssReader, error) {
 	}, nil
 }
 
+// removeTags strips all HTML tags from the given text and also replaces
+// common HTML entities such as &nbsp;. This is used to clean RSS descriptions.
 func (r *RssReader) removeTags(text string) string {
 	clean := r.htmlTagRegex.ReplaceAllString(text, "")
 	clean = strings.ReplaceAll(clean, "&nbsp;", " ")
 	return strings.TrimSpace(clean)
 }
 
+// fetchRssFeed downloads and parses an RSS feed from the specified URL.
+// It performs the HTTP request using the provided context, validates the
+// response, and decodes the XML body into an Rss struct.
 func (r *RssReader) fetchRssFeed(ctx context.Context, url string) (*Rss, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -98,6 +114,7 @@ func (r *RssReader) fetchRssFeed(ctx context.Context, url string) (*Rss, error) 
 	return &rss, nil
 }
 
+// printMenu displays the available RSS categories to the user.
 func (r *RssReader) printMenu() {
 	fmt.Println("Adnkronos RSS Reader")
 	fmt.Println("0: Exit")
@@ -112,6 +129,8 @@ func (r *RssReader) printMenu() {
 	fmt.Print("\nSelect category number: ")
 }
 
+// getCategoryInput reads user input from stdin and parses it into
+// an integer representing the selected RSS category.
 func (r *RssReader) getCategoryInput() (int, error) {
 	reader := bufio.NewReader(os.Stdin)
 	input, err := reader.ReadString('\n')
@@ -125,6 +144,8 @@ func (r *RssReader) getCategoryInput() (int, error) {
 	return cat, err
 }
 
+// displayFeed prints the high-level channel information followed by
+// each individual RSS item, including cleaned descriptions.
 func (r *RssReader) displayFeed(rss *Rss) {
 	fmt.Printf("\nTitle: %s\n", rss.Channel.Title)
 	fmt.Printf("Link: %s\n", rss.Channel.Link)
@@ -139,6 +160,9 @@ func (r *RssReader) displayFeed(rss *Rss) {
 	}
 }
 
+// Run starts the RSS reader: it displays the category menu,
+// retrieves the user's selection, fetches the chosen RSS feed,
+// and outputs its parsed content.
 func (r *RssReader) Run(ctx context.Context) error {
 	r.printMenu()
 
@@ -165,6 +189,8 @@ func (r *RssReader) Run(ctx context.Context) error {
 	return nil
 }
 
+// main initializes the RssReader and executes it. If any error occurs,
+// the program prints an error message and terminates with a non-zero code.
 func main() {
 	reader, err := NewRssReader()
 	if err != nil {
@@ -177,6 +203,5 @@ func main() {
 	if err := reader.Run(ctx); err != nil {
 		fmt.Println("Error:", err)
 		os.Exit(1)
-
 	}
 }

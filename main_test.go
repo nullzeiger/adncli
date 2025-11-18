@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Package main contains tests for the RSS reader implementation,
+// ensuring correct parsing, HTML sanitization, HTTP behavior,
+// and interactive input processing.
 package main
 
 import (
@@ -14,6 +17,8 @@ import (
 	"testing"
 )
 
+// sampleRSS provides a minimal but valid RSS fixture used for testing
+// XML parsing and feed fetching.
 const sampleRSS = `
 <rss>
   <channel>
@@ -30,6 +35,8 @@ const sampleRSS = `
 </rss>
 `
 
+// TestRemoveTags verifies that HTML tags and common entities such as &nbsp;
+// are correctly removed or replaced by the removeTags method.
 func TestRemoveTags(t *testing.T) {
 	reader, err := NewRssReader()
 	if err != nil {
@@ -45,6 +52,8 @@ func TestRemoveTags(t *testing.T) {
 	}
 }
 
+// TestCategoryURLs ensures that NewRssReader initializes the expected
+// category URL mappings and does not include invalid ones.
 func TestCategoryURLs(t *testing.T) {
 	reader, err := NewRssReader()
 	if err != nil {
@@ -62,6 +71,8 @@ func TestCategoryURLs(t *testing.T) {
 	}
 }
 
+// TestXMLParsing verifies that XML unmarshalling into the Rss
+// struct works correctly for valid RSS input.
 func TestXMLParsing(t *testing.T) {
 	var rss Rss
 	err := xml.Unmarshal([]byte(sampleRSS), &rss)
@@ -78,6 +89,8 @@ func TestXMLParsing(t *testing.T) {
 	}
 }
 
+// TestFetchRssFeed verifies that fetchRssFeed can successfully retrieve
+// and parse RSS content served from an httptest server.
 func TestFetchRssFeed(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, sampleRSS)
@@ -97,6 +110,8 @@ func TestFetchRssFeed(t *testing.T) {
 	}
 }
 
+// TestFetchRssFeedStatusError ensures that fetchRssFeed returns an error
+// when the server responds with an HTTP error status code.
 func TestFetchRssFeedStatusError(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "err", http.StatusInternalServerError)
@@ -112,6 +127,8 @@ func TestFetchRssFeedStatusError(t *testing.T) {
 	}
 }
 
+// TestFetchRssFeedMalformedXML checks that fetchRssFeed reports an error
+// when the server returns incomplete or invalid XML.
 func TestFetchRssFeedMalformedXML(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "<rss><channel><title>")
@@ -127,6 +144,8 @@ func TestFetchRssFeedMalformedXML(t *testing.T) {
 	}
 }
 
+// TestGetCategoryInput verifies that getCategoryInput properly reads and
+// parses the user's category selection from stdin.
 func TestGetCategoryInput(t *testing.T) {
 	reader, _ := NewRssReader()
 
