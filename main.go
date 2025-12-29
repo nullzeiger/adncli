@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package main provides a simple command-line RSS reader for
-// Adnkronos RSS feeds. It allows users to select a news category,
-// fetch the corresponding RSS feed, and display parsed content.
 package main
 
 import (
@@ -12,20 +9,23 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"html"
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// Rss represents the root <rss> element of an RSS document.
+// -- Strutture XML per il parsing RSS --
+
+// Rss represents the root <rss> element.
 type Rss struct {
 	Channel Channel `xml:"channel"`
 }
 
-// Channel represents the <channel> section of an RSS feed,
-// containing metadata and a collection of RSS items.
+// Channel represents the <channel> section of an RSS feed.
 type Channel struct {
 	Title       string `xml:"title"`
 	Description string `xml:"description"`
@@ -33,8 +33,7 @@ type Channel struct {
 	Items       []Item `xml:"item"`
 }
 
-// Item represents a single <item> entry in an RSS feed, containing
-// information about an individual news article.
+// Item represents a single <item> entry.
 type Item struct {
 	Title       string `xml:"title"`
 	Link        string `xml:"link"`
@@ -42,59 +41,67 @@ type Item struct {
 	PubDate     string `xml:"pubDate"`
 }
 
-// RssReader provides the functionality to load RSS feeds,
-// remove HTML tags from descriptions, and display the parsed results.
-type RssReader struct {
-	categoryURLs map[int]string // Mapping of category numbers to RSS URLs
-	htmlTagRegex *regexp.Regexp // Precompiled regex for HTML tag removal
-	client       *http.Client   // HTTP client used to fetch RSS feeds
+// -- Strutture interne dell'applicazione --
+
+// FeedCategory holds the metadata for a selectable RSS category.
+type FeedCategory struct {
+	ID   int
+	Name string
+	URL  string
 }
 
-// NewRssReader initializes and returns a configured RssReader.
-// It prepares the RSS category URL map, compiles required regular
-// expressions, and sets up an HTTP client.
+// RssReader logic controller.
+type RssReader struct {
+	categories   []FeedCategory
+	htmlTagRegex *regexp.Regexp
+	client       *http.Client
+}
+
+// NewRssReader initializes the reader with configuration and compiled regex.
 func NewRssReader() (*RssReader, error) {
-	categoryURLs := map[int]string{
-		1: "https://www.adnkronos.com/RSS_PrimaPagina.xml",
-		2: "https://www.adnkronos.com/RSS_Ultimora.xml",
-		3: "https://www.adnkronos.com/RSS_Politica.xml",
-		4: "https://www.adnkronos.com/RSS_Esteri.xml",
-		5: "https://www.adnkronos.com/RSS_Cronaca.xml",
-		6: "https://www.adnkronos.com/RSS_Economia.xml",
-		7: "https://www.adnkronos.com/RSS_Finanza.xml",
-		8: "https://www.adnkronos.com/RSS_Sport.xml",
+	// Using a slice allows us to maintain order and generate the menu dynamically.
+	categories := []FeedCategory{
+		{1, "Prima Pagina", "https://www.adnkronos.com/RSS_PrimaPagina.xml"},
+		{2, "Ultim'ora", "https://www.adnkronos.com/RSS_Ultimora.xml"},
+		{3, "Politica", "https://www.adnkronos.com/RSS_Politica.xml"},
+		{4, "Esteri", "https://www.adnkronos.com/RSS_Esteri.xml"},
+		{5, "Cronaca", "https://www.adnkronos.com/RSS_Cronaca.xml"},
+		{6, "Economia", "https://www.adnkronos.com/RSS_Economia.xml"},
+		{7, "Finanza", "https://www.adnkronos.com/RSS_Finanza.xml"},
+		{8, "Sport", "https://www.adnkronos.com/RSS_Sport.xml"},
 	}
 
-	htmlTagRegex, err := regexp.Compile(`<[^>]*>`)
+	// Compile regex once.
+	re, err := regexp.Compile(`<[^>]*>`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to compile regex: %w", err)
 	}
-
-	client := &http.Client{Timeout: 15 * time.Second}
 
 	return &RssReader{
-		categoryURLs: categoryURLs,
-		htmlTagRegex: htmlTagRegex,
-		client:       client,
+		categories:   categories,
+		htmlTagRegex: re,
+		client:       &http.Client{Timeout: 10 * time.Second},
 	}, nil
 }
 
-// removeTags strips all HTML tags from the given text and also replaces
-// common HTML entities such as &nbsp;. This is used to clean RSS descriptions.
-func (r *RssReader) removeTags(text string) string {
+// cleanText removes HTML tags and unescapes HTML entities.
+func (r *RssReader) cleanText(text string) string {
+	// 1. Remove HTML tags
 	clean := r.htmlTagRegex.ReplaceAllString(text, "")
-	clean = strings.ReplaceAll(clean, "&nbsp;", " ")
+	// 2. Unescape entities (e.g. &quot; -> ", &agrave; -> à)
+	clean = html.UnescapeString(clean)
 	return strings.TrimSpace(clean)
 }
 
-// fetchRssFeed downloads and parses an RSS feed from the specified URL.
-// It performs the HTTP request using the provided context, validates the
-// response, and decodes the XML body into an Rss struct.
-func (r *RssReader) fetchRssFeed(ctx context.Context, url string) (*Rss, error) {
+// fetchFeed downloads and parses the RSS.
+func (r *RssReader) fetchFeed(ctx context.Context, url string) (*Rss, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
+	
+	// User-Agent is polite to add, though often optional
+	req.Header.Set("User-Agent", "Adnkronos-CLI-Reader/1.0")
 
 	resp, err := r.client.Do(req)
 	if err != nil {
@@ -102,106 +109,114 @@ func (r *RssReader) fetchRssFeed(ctx context.Context, url string) (*Rss, error) 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP error: %d %s", resp.StatusCode, resp.Status)
 	}
 
 	var rss Rss
 	if err := xml.NewDecoder(resp.Body).Decode(&rss); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("xml decode error: %w", err)
 	}
 
 	return &rss, nil
 }
 
-// printMenu displays the available RSS categories to the user.
+// printMenu dynamically prints options based on the categories slice.
 func (r *RssReader) printMenu() {
-	fmt.Println("Adnkronos RSS Reader")
-	fmt.Println("0: Exit")
-	fmt.Println("1: Prima Pagina")
-	fmt.Println("2: Ultim'ora")
-	fmt.Println("3: Politica")
-	fmt.Println("4: Esteri")
-	fmt.Println("5: Cronaca")
-	fmt.Println("6: Economia")
-	fmt.Println("7: Finanza")
-	fmt.Println("8: Sport")
-	fmt.Print("\nSelect category number: ")
-}
-
-// getCategoryInput reads user input from stdin and parses it into
-// an integer representing the selected RSS category.
-func (r *RssReader) getCategoryInput() (int, error) {
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return 0, err
+	fmt.Println("\n--- Adnkronos RSS Reader ---")
+	fmt.Println("0: Esci")
+	for _, cat := range r.categories {
+		fmt.Printf("%d: %s\n", cat.ID, cat.Name)
 	}
-
-	input = strings.TrimSpace(input)
-	var cat int
-	_, err = fmt.Sscanf(input, "%d", &cat)
-	return cat, err
+	fmt.Print("\nSeleziona un numero: ")
 }
 
-// displayFeed prints the high-level channel information followed by
-// each individual RSS item, including cleaned descriptions.
+// displayFeed renders the feed items to stdout.
 func (r *RssReader) displayFeed(rss *Rss) {
-	fmt.Printf("\nTitle: %s\n", rss.Channel.Title)
-	fmt.Printf("Link: %s\n", rss.Channel.Link)
-	fmt.Printf("Description: %s\n\n", rss.Channel.Description)
+	fmt.Printf("\n=== %s ===\n", strings.ToUpper(rss.Channel.Title))
+	fmt.Printf("%s\n\n", rss.Channel.Description)
 
-	for _, item := range rss.Channel.Items {
-		fmt.Printf("Title: %s\n", item.Title)
-		fmt.Printf("Link: %s\n", item.Link)
-		fmt.Printf("Description: %s\n", r.removeTags(item.Description))
-		fmt.Printf("Published: %s\n\n", item.PubDate)
-		fmt.Println(strings.Repeat("-", 80))
+	if len(rss.Channel.Items) == 0 {
+		fmt.Println("Nessuna notizia trovata in questo feed.")
+		return
+	}
+
+	for i, item := range rss.Channel.Items {
+		fmt.Printf("[%d] %s\n", i+1, strings.TrimSpace(item.Title))
+		// Optional: parse and format date nicely here if needed
+		if item.PubDate != "" {
+			fmt.Printf("    Pubblicato: %s\n", item.PubDate)
+		}
+		desc := r.cleanText(item.Description)
+		if desc != "" {
+			fmt.Printf("    %s\n", desc)
+		}
+		fmt.Println(strings.Repeat("-", 60))
 	}
 }
 
-// Run starts the RSS reader: it displays the category menu,
-// retrieves the user's selection, fetches the chosen RSS feed,
-// and outputs its parsed content.
-func (r *RssReader) Run(ctx context.Context) error {
-	r.printMenu()
+// Run starts the interactive loop.
+func (r *RssReader) Run() {
+	scanner := bufio.NewScanner(os.Stdin)
 
-	category, err := r.getCategoryInput()
-	if err != nil {
-		return err
+	for {
+		r.printMenu()
+
+		if !scanner.Scan() {
+			break // EOF or error
+		}
+		input := strings.TrimSpace(scanner.Text())
+
+		choice, err := strconv.Atoi(input)
+		if err != nil {
+			fmt.Println(">> Errore: Inserisci un numero valido.")
+			continue
+		}
+
+		if choice == 0 {
+			fmt.Println("Arrivederci!")
+			return
+		}
+
+		// Find the selected category
+		var selectedURL string
+		for _, cat := range r.categories {
+			if cat.ID == choice {
+				selectedURL = cat.URL
+				break
+			}
+		}
+
+		if selectedURL == "" {
+			fmt.Println(">> Errore: Categoria non valida.")
+			continue
+		}
+
+		fmt.Println("Caricamento notizie in corso...")
+		
+		// Create a context with timeout for the fetch operation
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		rss, err := r.fetchFeed(ctx, selectedURL)
+		cancel() // Cancel context as soon as fetch is done
+
+		if err != nil {
+			fmt.Printf(">> Errore nel scaricare il feed: %v\n", err)
+			continue
+		}
+
+		r.displayFeed(rss)
+		
+		fmt.Println("\nPremi Invio per tornare al menu...")
+		scanner.Scan() // Wait for user to read before clearing/showing menu again
 	}
-
-	if category == 0 {
-		os.Exit(0)
-	}
-
-	url, ok := r.categoryURLs[category]
-	if !ok {
-		return fmt.Errorf("invalid category number")
-	}
-
-	rss, err := r.fetchRssFeed(ctx, url)
-	if err != nil {
-		return err
-	}
-
-	r.displayFeed(rss)
-	return nil
 }
 
-// main initializes the RssReader and executes it. If any error occurs,
-// the program prints an error message and terminates with a non-zero code.
 func main() {
 	reader, err := NewRssReader()
 	if err != nil {
-		fmt.Println("Error:", err)
+		fmt.Fprintf(os.Stderr, "Errore inizializzazione: %v\n", err)
 		os.Exit(1)
 	}
 
-	ctx := context.Background()
-
-	if err := reader.Run(ctx); err != nil {
-		fmt.Println("Error:", err)
-		os.Exit(1)
-	}
+	reader.Run()
 }
