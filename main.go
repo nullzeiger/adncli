@@ -99,7 +99,7 @@ func (r *RssReader) fetchFeed(ctx context.Context, url string) (*Rss, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// User-Agent is polite to add, though often optional
 	req.Header.Set("User-Agent", "Adnkronos-CLI-Reader/1.0")
 
@@ -193,7 +193,7 @@ func (r *RssReader) Run() {
 		}
 
 		fmt.Println("Caricamento notizie in corso...")
-		
+
 		// Create a context with timeout for the fetch operation
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		rss, err := r.fetchFeed(ctx, selectedURL)
@@ -205,7 +205,7 @@ func (r *RssReader) Run() {
 		}
 
 		r.displayFeed(rss)
-		
+
 		fmt.Println("\nPremi Invio per tornare al menu...")
 		scanner.Scan() // Wait for user to read before clearing/showing menu again
 	}
