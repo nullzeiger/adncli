@@ -1,4 +1,4 @@
-// Copyright 2025 Ivan Guerreschi. All rights reserved.
+// Copyright 2026 Ivan Guerreschi. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -17,8 +17,6 @@ import (
 	"strings"
 	"time"
 )
-
-// -- Strutture XML per il parsing RSS --
 
 // Rss represents the root <rss> element.
 type Rss struct {
@@ -40,8 +38,6 @@ type Item struct {
 	Description string `xml:"description"`
 	PubDate     string `xml:"pubDate"`
 }
-
-// -- Strutture interne dell'applicazione --
 
 // FeedCategory holds the metadata for a selectable RSS category.
 type FeedCategory struct {
