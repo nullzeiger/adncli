@@ -18,6 +18,19 @@ import (
 	"time"
 )
 
+// --- ANSI Color Codes ---
+const (
+	ColorReset  = "\033[0m"
+	ColorRed    = "\033[31m"
+	ColorGreen  = "\033[32m"
+	ColorYellow = "\033[33m"
+	ColorBlue   = "\033[34m"
+	ColorPurple = "\033[35m"
+	ColorCyan   = "\033[36m"
+	ColorWhite  = "\033[37m"
+	ColorBold   = "\033[1m"
+)
+
 // Rss represents the root <rss> element.
 type Rss struct {
 	Channel Channel `xml:"channel"`
@@ -55,7 +68,6 @@ type RssReader struct {
 
 // NewRssReader initializes the reader with configuration and compiled regex.
 func NewRssReader() (*RssReader, error) {
-	// Using a slice allows us to maintain order and generate the menu dynamically.
 	categories := []FeedCategory{
 		{1, "Prima Pagina", "https://www.adnkronos.com/RSS_PrimaPagina.xml"},
 		{2, "Ultim'ora", "https://www.adnkronos.com/RSS_Ultimora.xml"},
@@ -67,7 +79,6 @@ func NewRssReader() (*RssReader, error) {
 		{8, "Sport", "https://www.adnkronos.com/RSS_Sport.xml"},
 	}
 
-	// Compile regex once.
 	re, err := regexp.Compile(`<[^>]*>`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile regex: %w", err)
@@ -82,9 +93,7 @@ func NewRssReader() (*RssReader, error) {
 
 // cleanText removes HTML tags and unescapes HTML entities.
 func (r *RssReader) cleanText(text string) string {
-	// 1. Remove HTML tags
 	clean := r.htmlTagRegex.ReplaceAllString(text, "")
-	// 2. Unescape entities (e.g. &quot; -> ", &agrave; -> à)
 	clean = html.UnescapeString(clean)
 	return strings.TrimSpace(clean)
 }
@@ -96,7 +105,6 @@ func (r *RssReader) fetchFeed(ctx context.Context, url string) (*Rss, error) {
 		return nil, err
 	}
 
-	// User-Agent is polite to add, though often optional
 	req.Header.Set("User-Agent", "Adnkronos-CLI-Reader/1.0")
 
 	resp, err := r.client.Do(req)
@@ -119,18 +127,25 @@ func (r *RssReader) fetchFeed(ctx context.Context, url string) (*Rss, error) {
 
 // printMenu dynamically prints options based on the categories slice.
 func (r *RssReader) printMenu() {
-	fmt.Println("\n--- Adnkronos RSS Reader ---")
-	fmt.Println("0: Esci")
+	// Header in Bold Cyan
+	fmt.Printf("\n%s--- Adnkronos RSS Reader ---%s\n", ColorBold+ColorCyan, ColorReset)
+
+	// Option 0 in Red
+	fmt.Printf("%s0:%s Esci\n", ColorRed, ColorReset)
+
 	for _, cat := range r.categories {
-		fmt.Printf("%d: %s\n", cat.ID, cat.Name)
+		// ID in Yellow, Name in standard color
+		fmt.Printf("%s%d:%s %s\n", ColorYellow, cat.ID, ColorReset, cat.Name)
 	}
-	fmt.Print("\nSeleziona un numero: ")
+	// Prompt in Bold
+	fmt.Printf("\n%sSeleziona un numero: %s", ColorBold, ColorReset)
 }
 
 // displayFeed renders the feed items to stdout.
 func (r *RssReader) displayFeed(rss *Rss) {
-	fmt.Printf("\n=== %s ===\n", strings.ToUpper(rss.Channel.Title))
-	fmt.Printf("%s\n\n", rss.Channel.Description)
+	// Channel Title in Bold Green background or just Bold Green text
+	fmt.Printf("\n%s=== %s ===%s\n", ColorBold+ColorGreen, strings.ToUpper(rss.Channel.Title), ColorReset)
+	fmt.Printf("%s%s%s\n\n", ColorPurple, rss.Channel.Description, ColorReset)
 
 	if len(rss.Channel.Items) == 0 {
 		fmt.Println("Nessuna notizia trovata in questo feed.")
@@ -138,15 +153,20 @@ func (r *RssReader) displayFeed(rss *Rss) {
 	}
 
 	for i, item := range rss.Channel.Items {
-		fmt.Printf("[%d] %s\n", i+1, strings.TrimSpace(item.Title))
-		// Optional: parse and format date nicely here if needed
+		// Index in Blue, Title in Bold White
+		fmt.Printf("%s[%d]%s %s%s%s\n", ColorBlue, i+1, ColorReset, ColorBold, strings.TrimSpace(item.Title), ColorReset)
+
 		if item.PubDate != "" {
-			fmt.Printf("    Pubblicato: %s\n", item.PubDate)
+			// Date in Cyan
+			fmt.Printf("    Pubblicato: %s%s%s\n", ColorCyan, item.PubDate, ColorReset)
 		}
+
 		desc := r.cleanText(item.Description)
 		if desc != "" {
 			fmt.Printf("    %s\n", desc)
 		}
+
+		// Separator in faint gray (using standard here for compatibility)
 		fmt.Println(strings.Repeat("-", 60))
 	}
 }
@@ -159,13 +179,14 @@ func (r *RssReader) Run() {
 		r.printMenu()
 
 		if !scanner.Scan() {
-			break // EOF or error
+			break
 		}
 		input := strings.TrimSpace(scanner.Text())
 
 		choice, err := strconv.Atoi(input)
 		if err != nil {
-			fmt.Println(">> Errore: Inserisci un numero valido.")
+			// Error in Red
+			fmt.Printf("%s>> Errore: Inserisci un numero valido.%s\n", ColorRed, ColorReset)
 			continue
 		}
 
@@ -174,7 +195,6 @@ func (r *RssReader) Run() {
 			return
 		}
 
-		// Find the selected category
 		var selectedURL string
 		for _, cat := range r.categories {
 			if cat.ID == choice {
@@ -184,33 +204,29 @@ func (r *RssReader) Run() {
 		}
 
 		if selectedURL == "" {
-			fmt.Println(">> Errore: Categoria non valida.")
+			fmt.Printf("%s>> Errore: Categoria non valida.%s\n", ColorRed, ColorReset)
 			continue
 		}
 
 		fmt.Println("Caricamento notizie in corso...")
 
-		// Create a context with timeout for the fetch operation
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		rss, err := r.fetchFeed(ctx, selectedURL)
-		cancel() // Cancel context as soon as fetch is done
+		cancel()
 
 		if err != nil {
-			fmt.Printf(">> Errore nel scaricare il feed: %v\n", err)
+			fmt.Printf("%s>> Errore nel scaricare il feed: %v%s\n", ColorRed, err, ColorReset)
 			continue
 		}
 
 		r.displayFeed(rss)
-
-		fmt.Println("\nPremi Invio per tornare al menu...")
-		scanner.Scan() // Wait for user to read before clearing/showing menu again
 	}
 }
 
 func main() {
 	reader, err := NewRssReader()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Errore inizializzazione: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%sErrore inizializzazione: %v%s\n", ColorRed, err, ColorReset)
 		os.Exit(1)
 	}
 
